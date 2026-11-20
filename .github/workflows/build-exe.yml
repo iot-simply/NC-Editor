@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: "Release-Tag fuer die exe (z. B. 1.0). Leer lassen = nur Artefakt."
+        description: "Release-Tag für die exe (z. B. 2.1). Leer lassen = nur Artefakt."
         required: false
         default: ""
   push:
@@ -108,7 +108,7 @@ jobs:
 
           $notizen = @()
           if ($text) {
-            $notizen += "## Aenderungen in $version"
+            $notizen += "## Änderungen in $version"
             $notizen += ""
             $notizen += $text
             $notizen += ""
@@ -118,30 +118,30 @@ jobs:
 
           $notizen += "## Download"
           $notizen += ""
-          $notizen += "``NC-Editor.exe`` laeuft eigenstaendig, ohne installiertes Python."
+          $notizen += "``NC-Editor.exe`` läuft eigenständig, ohne installiertes Python."
           $notizen += "Gebaut mit PyInstaller aus ``$($env:GITHUB_SHA.Substring(0,7))`` auf einem Windows-Runner."
           $notizen += ""
-          $notizen += "Groesse: $($groesse.ToString('N0')) Bytes"
+          $notizen += "Größe: $($groesse.ToString('N0')) Bytes"
           $notizen += ""
           $notizen += "SHA-256: ``$pruefsumme``"
           $notizen += ""
-          $notizen += "Nach dem Herunterladen pruefen (PowerShell im Download-Ordner):"
+          $notizen += "Nach dem Herunterladen prüfen (PowerShell im Download-Ordner):"
           $notizen += ""
           $notizen += "``````"
           $notizen += "Get-FileHash .\NC-Editor.exe -Algorithm SHA256"
           $notizen += "``````"
           $notizen += ""
-          $notizen += "Stimmt der Wert nicht ueberein, war der Download unvollstaendig."
+          $notizen += "Stimmt der Wert nicht überein, war der Download unvollständig."
           $notizen += "Meldet Windows beim Start ``Could not load PyInstaller's embedded PKG archive``,"
-          $notizen += "ist genau das passiert: Datei loeschen und neu herunterladen."
+          $notizen += "ist genau das passiert: Datei löschen und neu herunterladen."
           $notizen += ""
-          $notizen += "Nach dem ersten Start einmalig als Programm fuer .mpf und .nc anmelden:"
-          $notizen += "Menue ``Extras`` -> ``Als Standardprogramm fuer .mpf und .nc anmelden``."
+          $notizen += "Nach dem ersten Start einmalig als Programm für .mpf und .nc anmelden:"
+          $notizen += "Menü ``Extras`` -> ``Als Standardprogramm für .mpf und .nc anmelden``."
           $notizen += ""
           $notizen += "Die Datei ist nicht signiert. Windows meldet deshalb beim ersten Start SmartScreen:"
-          $notizen += "ueber ``Weitere Informationen`` und ``Trotzdem ausfuehren`` bestaetigen."
+          $notizen += "über ``Weitere Informationen`` und ``Trotzdem ausführen`` bestätigen."
           $notizen += ""
-          $notizen += "Vollstaendige Anleitung: siehe README. Geaenderte NC-Programme vor dem Einsatz"
+          $notizen += "Vollständige Anleitung: siehe README. Geänderte NC-Programme vor dem Einsatz"
           $notizen += "an der Maschine im Einzelschritt und mit Probelauf pruefen."
           Set-Content -Path release-notes.md -Value ($notizen -join "`n") -Encoding UTF8
 
