@@ -425,6 +425,14 @@ bestätigen.
 
 ---
 
+## Kontakt
+
+Fehler, Wünsche und Fragen am besten als Issue in diesem Repository — so
+haben auch andere etwas davon. Sonst: [iot-simply.com](https://iot-simply.com),
+info@iot-simply.com
+
+---
+
 ## Lizenz und Marken
 
 Der NC-Editor steht unter der **MIT-Lizenz** – siehe [LICENSE](LICENSE). Frei
