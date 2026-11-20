@@ -42,7 +42,7 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements-build.txt
 
-      - name: Dateitreue pruefen (Speichern veraendert nichts)
+      - name: Dateitreue prüfen (Speichern verändert nichts)
         timeout-minutes: 8
         run: python tests/speichern_test.py
 
@@ -73,7 +73,7 @@ jobs:
                              -WorkingDirectory $PWD -PassThru -Wait
           if ($p.ExitCode -ne 0) { throw "NC-Editor.exe endete mit Code $($p.ExitCode)" }
           if (-not (Test-Path test_icon.png)) { throw "Programm hat kein Symbol geschrieben" }
-          Write-Host "NC-Editor.exe laeuft, Selbsttest bestanden."
+          Write-Host "NC-Editor.exe läuft, Selbsttest bestanden."
           Remove-Item test_icon.png
 
       - name: Ergebnis als Artefakt hochladen
@@ -142,7 +142,7 @@ jobs:
           $notizen += "über ``Weitere Informationen`` und ``Trotzdem ausführen`` bestätigen."
           $notizen += ""
           $notizen += "Vollständige Anleitung: siehe README. Geänderte NC-Programme vor dem Einsatz"
-          $notizen += "an der Maschine im Einzelschritt und mit Probelauf pruefen."
+          $notizen += "an der Maschine im Einzelschritt und mit Probelauf prüfen."
           Set-Content -Path release-notes.md -Value ($notizen -join "`n") -Encoding UTF8
 
           gh release view $tag 2>$null | Out-Null
