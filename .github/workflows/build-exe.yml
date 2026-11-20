@@ -1,0 +1,158 @@
+name: NC-Editor.exe bauen
+
+# Baut die eigenstaendige Windows-Programmdatei auf einem Windows-Runner.
+# - Manuell startbar (Actions -> "NC-Editor.exe bauen" -> "Run workflow").
+#   Wird dabei ein Release-Tag angegeben, wird die exe an dieses Release gehaengt.
+# - Laeuft automatisch bei einem Tag wie v1.0 oder 1.0.
+#
+# Der Release-Text wird aus CHANGELOG.md erzeugt: der Abschnitt "## <Version>"
+# ist die Quelle, damit Changelog und Release nicht auseinanderlaufen.
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release-Tag fuer die exe (z. B. 1.0). Leer lassen = nur Artefakt."
+        required: false
+        default: ""
+  push:
+    tags:
+      - "v*"
+      - "[0-9]*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    # Notbremse: Haengt ein Schritt, bricht der Bau ab, statt stundenlang zu warten.
+    timeout-minutes: 25
+
+    steps:
+      - name: Quelltext holen
+        uses: actions/checkout@v5
+
+      - name: Python einrichten
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Abhaengigkeiten installieren
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-build.txt
+
+      - name: Dateitreue pruefen (Speichern veraendert nichts)
+        timeout-minutes: 8
+        run: python tests/speichern_test.py
+
+      - name: Programmsymbol exportieren
+        run: python ncedit.py --icon-export ncedit_icon.png
+
+      - name: Mit PyInstaller bauen
+        run: >
+          python -m PyInstaller --onefile --noconsole --name NC-Editor
+          --icon ncedit_icon.png
+          --hidden-import PIL.ImageTk --hidden-import PIL.ImageDraw
+          --hidden-import webbrowser
+          --collect-all tkinterdnd2
+          ncedit.py
+
+      # Das Programm ist ein GUI-Programm (--noconsole). PowerShell wartet darauf
+      # nicht von selbst, deshalb Start-Process mit -Wait.
+      # Der Selbsttest baut wirklich ein Fenster auf, faerbt ein und sucht -
+      # ein blosses --icon-export endet, bevor ueberhaupt Tkinter startet.
+      - name: Selbsttest der gebauten exe
+        timeout-minutes: 4
+        run: |
+          $exe = Resolve-Path "dist\NC-Editor.exe"
+          $p = Start-Process -FilePath $exe -ArgumentList "--selbsttest" `
+                             -WorkingDirectory $PWD -PassThru -Wait
+          if ($p.ExitCode -ne 0) { throw "Selbsttest endete mit Code $($p.ExitCode)" }
+          $p = Start-Process -FilePath $exe -ArgumentList "--icon-export","test_icon.png" `
+                             -WorkingDirectory $PWD -PassThru -Wait
+          if ($p.ExitCode -ne 0) { throw "NC-Editor.exe endete mit Code $($p.ExitCode)" }
+          if (-not (Test-Path test_icon.png)) { throw "Programm hat kein Symbol geschrieben" }
+          Write-Host "NC-Editor.exe laeuft, Selbsttest bestanden."
+          Remove-Item test_icon.png
+
+      - name: Ergebnis als Artefakt hochladen
+        uses: actions/upload-artifact@v6
+        with:
+          name: nc-editor-exe
+          path: dist/NC-Editor.exe
+          if-no-files-found: error
+
+      - name: An Release anhaengen
+        if: startsWith(github.ref, 'refs/tags/') || github.event.inputs.release_tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.inputs.release_tag }}
+        run: |
+          $tag = $env:RELEASE_TAG
+          if (-not $tag) { $tag = $env:GITHUB_REF_NAME }
+          $version = $tag -replace '^v', ''
+
+          # Passenden Abschnitt aus CHANGELOG.md holen ("## 1.0" bis zur naechsten "## "-Zeile)
+          $abschnitt = @()
+          $drin = $false
+          foreach ($zeile in (Get-Content CHANGELOG.md -Encoding UTF8)) {
+            if ($zeile -match '^##\s+(.*)$') {
+              if ($drin) { break }
+              if ($Matches[1].Trim() -eq $version) { $drin = $true }
+              continue
+            }
+            if ($drin) { $abschnitt += $zeile }
+          }
+          $text = ($abschnitt -join "`n").Trim()
+
+          $notizen = @()
+          if ($text) {
+            $notizen += "## Aenderungen in $version"
+            $notizen += ""
+            $notizen += $text
+            $notizen += ""
+          }
+          $pruefsumme = (Get-FileHash "dist\NC-Editor.exe" -Algorithm SHA256).Hash.ToLower()
+          $groesse = (Get-Item "dist\NC-Editor.exe").Length
+
+          $notizen += "## Download"
+          $notizen += ""
+          $notizen += "``NC-Editor.exe`` laeuft eigenstaendig, ohne installiertes Python."
+          $notizen += "Gebaut mit PyInstaller aus ``$($env:GITHUB_SHA.Substring(0,7))`` auf einem Windows-Runner."
+          $notizen += ""
+          $notizen += "Groesse: $($groesse.ToString('N0')) Bytes"
+          $notizen += ""
+          $notizen += "SHA-256: ``$pruefsumme``"
+          $notizen += ""
+          $notizen += "Nach dem Herunterladen pruefen (PowerShell im Download-Ordner):"
+          $notizen += ""
+          $notizen += "``````"
+          $notizen += "Get-FileHash .\NC-Editor.exe -Algorithm SHA256"
+          $notizen += "``````"
+          $notizen += ""
+          $notizen += "Stimmt der Wert nicht ueberein, war der Download unvollstaendig."
+          $notizen += "Meldet Windows beim Start ``Could not load PyInstaller's embedded PKG archive``,"
+          $notizen += "ist genau das passiert: Datei loeschen und neu herunterladen."
+          $notizen += ""
+          $notizen += "Nach dem ersten Start einmalig als Programm fuer .mpf und .nc anmelden:"
+          $notizen += "Menue ``Extras`` -> ``Als Standardprogramm fuer .mpf und .nc anmelden``."
+          $notizen += ""
+          $notizen += "Die Datei ist nicht signiert. Windows meldet deshalb beim ersten Start SmartScreen:"
+          $notizen += "ueber ``Weitere Informationen`` und ``Trotzdem ausfuehren`` bestaetigen."
+          $notizen += ""
+          $notizen += "Vollstaendige Anleitung: siehe README. Geaenderte NC-Programme vor dem Einsatz"
+          $notizen += "an der Maschine im Einzelschritt und mit Probelauf pruefen."
+          Set-Content -Path release-notes.md -Value ($notizen -join "`n") -Encoding UTF8
+
+          gh release view $tag 2>$null | Out-Null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $tag --title "NC-Editor $version" --notes-file release-notes.md
+            Write-Host "Release $tag angelegt."
+          } else {
+            gh release edit $tag --title "NC-Editor $version" --notes-file release-notes.md
+            Write-Host "Release $tag aktualisiert."
+          }
+          gh release upload $tag dist/NC-Editor.exe --clobber
+          Remove-Item release-notes.md
+          Write-Host "exe an Release $tag gehaengt."

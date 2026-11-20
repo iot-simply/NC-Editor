@@ -1,0 +1,4 @@
+# Zusaetzlich nur fuer den Bau der eigenstaendigen NC-Editor.exe
+-r requirements.txt
+
+pyinstaller>=5.13

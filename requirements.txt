@@ -1,0 +1,11 @@
+# Laufzeit-Abhaengigkeiten von NC-Editor
+# tkinter gehoert zum Python-Standardumfang und wird nicht ueber pip installiert.
+
+# Nur fuer die Logoanzeige und fuer das Programmsymbol beim Anmelden unter
+# Windows. Ohne Pillow laeuft das Programm, das Logo wird dann einfacher
+# dargestellt.
+pillow>=9.0
+
+# Dateien per Maus aus dem Explorer in den Editor ziehen. Fehlt die
+# Bibliothek, laeuft alles andere unveraendert - nur Drag and Drop entfaellt.
+tkinterdnd2>=0.3
