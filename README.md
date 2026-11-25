@@ -9,7 +9,7 @@ Stellen von Hand angepasst. Genau diese Hand-Anpassungen hebt der Editor
 dauerhaft hervor – auch Wochen später und auch dann, wenn zwischendurch ein
 anderes Programm die Datei geöffnet hat.
 
-- Version: **2.1**
+- Version: **2.2**
 - Lizenz: **MIT** – Copyright (c) 2026 Christopher Schmick,
   [iot-simply.com](https://iot-simply.com)
 - Keine Internetverbindung nötig, es werden keine Daten übertragen.
@@ -361,7 +361,15 @@ SINUMERIK.
 | `F5` | Datei neu von der Platte laden |
 | `F8` / `Umschalt+F8` | Nächste / vorige Hand-Änderung |
 | `Strg+Z` / `Strg+Y` | Rückgängig / Wiederholen |
+| `Strg+X` / `Strg+C` / `Strg+V` | Ausschneiden / Kopieren / Einfügen |
+| `Strg+A` | Alles markieren (im Suchfeld nur das Feld) |
 | `Strg++` / `Strg+-` / `Strg+0` | Schrift größer / kleiner / zurücksetzen |
+
+Die **rechte Maustaste** öffnet im Editor ein Menü mit Ausschneiden,
+Kopieren, Einfügen, Alles markieren, Rückgängig und „Gehe zu Zeile". Ist
+etwas markiert, steht dort zusätzlich „Suchen nach …" mit dem markierten
+Text. Ein Klick außerhalb der Markierung setzt die Schreibmarke mit,
+innerhalb bleibt die Markierung erhalten.
 
 ---
 

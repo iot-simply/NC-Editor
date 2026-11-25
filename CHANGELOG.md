@@ -1,5 +1,41 @@
 # Änderungen
 
+## 2.2
+
+Vier Fehler aus dem Werkstattbetrieb.
+
+- **Die rechte Maustaste öffnet jetzt ein Menü im Editor** mit
+  Ausschneiden, Kopieren, Einfügen, Alles markieren, Rückgängig und
+  „Gehe zu Zeile". Ist etwas markiert, steht dort zusätzlich „Suchen nach
+  …" mit dem markierten Text. Bisher gab es für die Maus überhaupt keinen
+  Weg zum Kopieren - wer die Tastenkürzel nicht kannte, kam nicht an den
+  Text. Ein Klick außerhalb der Markierung setzt die Schreibmarke mit,
+  innerhalb bleibt die Markierung stehen.
+- **Keine falschen Hand-Markierungen mehr nach einem neuen
+  Postprozessor-Lauf.** Ob ein anderes Programm die Datei geschrieben hat,
+  wurde bisher an Größe und Zeitmarke festgemacht. Auf Netzlaufwerken ist
+  die Zeitmarke oft nur sekundengenau, und ein neu ausgegebenes Programm
+  kann zufällig genauso lang sein wie das vorige - dann galt die neue
+  Ausgabe als alter Stand, und jede abweichende Zeile wurde als
+  Hand-Änderung angezeigt. Jetzt entscheidet eine Prüfsumme des
+  Dateiinhalts, die sich nicht verwechseln lässt.
+- **Ablagen aus Fassung 1.x führen nicht mehr dazu, dass alles markiert
+  wird.** Fehlten die Zustandsangaben, blieb das alte Original stehen und
+  wurde gegen ein völlig anderes Programm verglichen. Jetzt entscheidet in
+  diesem Fall der Umfang der Abweichung: einzelne Zeilen bleiben als
+  Hand-Änderung markiert, weicht fast alles ab, gilt der neue Stand als
+  Original.
+- **Die Gliederung folgt den Änderungen.** Bisher blieb sie nach einer
+  Änderung stehen: ein von Hand eingefügter Werkzeugwechsel tauchte nicht
+  auf, und „Hand-Änderungen" zählte weiter den Stand beim Öffnen.
+- **Strg+A markiert alles und Strg+Y wiederholt.** Beide standen im Menü,
+  taten aber etwas anderes, weil Tk diese Tasten selbst belegt - Strg+A
+  sprang an den Zeilenanfang, Strg+Y fügte die Zwischenablage ein. Im
+  Suchfeld markiert Strg+A weiterhin nur das Feld.
+
+Der mitgelieferte Test prüft diese Fälle ab jetzt bei jedem Bau mit
+(Abschnitte 10 bis 12).
+
 ## 2.1
 
 - **Umlaute werden richtig geschrieben.** Oberfläche, Menüs, Meldungen,

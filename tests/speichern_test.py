@@ -402,6 +402,215 @@ def main():
     if not all(ok for _b, ok in (("", len(beschriftungen) == 3),)):
         print("         Beschriftungen: %s" % sorted(beschriftungen))
 
+    print("\n10) Kein Fehlbefund, wenn der Postprozessor nicht erkannt wurde")
+    # Groesse und Zeitmarke reichen nicht aus: auf Netzlaufwerken ist die
+    # Zeitmarke oft nur sekundengenau, und ein neues Programm kann zufaellig
+    # genauso lang sein. Fruehere Fassungen hielten das fuer den alten Stand
+    # und markierten jede Zeile als Hand-Aenderung.
+    ALT = b"N10 G54\nN20 T=\"FRAESER8\" M6\nN30 G1 Z-5 F120\nN40 M30\n"
+    NEU = b"N10 G55\nN20 T=\"BOHRER06\" M6\nN30 G1 Z-9 F200\nN40 M30\n"
+    assert len(ALT) == len(NEU), "Faelle muessen gleich lang sein"
+
+    tarn = os.path.join(ordner, "tarnkappe.mpf")
+    with open(tarn, "wb") as fh:
+        fh.write(ALT)
+    app.datei_oeffnen(tarn)
+    app.win.update()
+    stand = os.stat(tarn)
+    with open(tarn, "wb") as fh:                  # neuer Lauf, gleiche Laenge
+        fh.write(NEU)
+    os.utime(tarn, (stand.st_atime, stand.st_mtime))      # gleiche Zeitmarke
+    dok_tarn = [d for d in app.dokumente if d.pfad == tarn][0]
+    app.dokument_schliessen(dok_tarn)
+    app.win.update()
+    app.datei_oeffnen(tarn)
+    app.win.update()
+    dok_tarn = [d for d in app.dokumente if d.pfad == tarn][0]
+    tarn_marken = dok_tarn.hand_anzahl()
+
+    # Ablage einer aelteren Fassung: ohne Abdruck und ohne Zeitmarke. Weicht
+    # fast alles ab, war es ein neuer Lauf. Weicht wenig ab, sind es frueher
+    # gespeicherte Hand-Aenderungen - die bleiben markiert.
+    def ablage_entkernen(pfad):
+        d = ncedit._verzeichnis_laden()
+        eintrag = d.get(ncedit._schluessel(pfad)) or {}
+        for feld in ("abdruck", "mtime", "groesse"):
+            eintrag.pop(feld, None)
+        d[ncedit._schluessel(pfad)] = eintrag
+        ncedit._verzeichnis_speichern(d)
+
+    VIEL_ALT = b"".join(b"N%d G1 X%d\n" % (n * 10, n) for n in range(1, 41))
+    VIEL_NEU = b"".join(b"N%d G0 Y%d M8\n" % (n * 10, n + 5) for n in range(1, 41))
+    grob = os.path.join(ordner, "altablage.mpf")
+    with open(grob, "wb") as fh:
+        fh.write(VIEL_ALT)
+    app.datei_oeffnen(grob)
+    app.win.update()
+    dok_grob = [d for d in app.dokumente if d.pfad == grob][0]
+    app.dokument_schliessen(dok_grob)
+    with open(grob, "wb") as fh:
+        fh.write(VIEL_NEU)
+    ablage_entkernen(grob)
+    app.datei_oeffnen(grob)
+    app.win.update()
+    grob_marken = [d for d in app.dokumente if d.pfad == grob][0].hand_anzahl()
+
+    # Gegenprobe: dieselbe alte Ablage, aber nur eine Zeile anders
+    fein = os.path.join(ordner, "altablage2.mpf")
+    with open(fein, "wb") as fh:
+        fh.write(VIEL_ALT)
+    app.datei_oeffnen(fein)
+    app.win.update()
+    app.dokument_schliessen([d for d in app.dokumente if d.pfad == fein][0])
+    with open(fein, "wb") as fh:
+        fh.write(VIEL_ALT.replace(b"N50 G1 X5\n", b"N50 G1 X5 ; HAND\n"))
+    ablage_entkernen(fein)
+    app.datei_oeffnen(fein)
+    app.win.update()
+    fein_marken = [d for d in app.dokumente if d.pfad == fein][0].hand_anzahl()
+
+    for beschreibung, ok, wert in (
+            ("neuer Lauf trotz gleicher Groesse und Zeitmarke erkannt",
+             tarn_marken == 0, tarn_marken),
+            ("alte Ablage: neuer Lauf erkannt, nicht alles markiert",
+             grob_marken == 0, grob_marken),
+            ("alte Ablage: einzelne Hand-Aenderung bleibt markiert",
+             fein_marken == 1, fein_marken)):
+        if ok:
+            print("  OK     %-50s %s" % (beschreibung, wert))
+        else:
+            fehler.append(beschreibung)
+            print("  FEHLER %-50s %s" % (beschreibung, wert))
+
+    print("\n11) Rechte Maustaste und Tastenkuerzel im Editor")
+    import tkinter as tk
+    aufgeklappt = []
+    echtes_popup = tk.Menu.tk_popup
+    tk.Menu.tk_popup = lambda selbst, x, y, entry="": aufgeklappt.append(selbst)
+    try:
+        bedien = os.path.join(ordner, "bedienung.mpf")
+        with open(bedien, "wb") as fh:
+            fh.write(b"N10 G54 G17 G90\nN20 G1 X50 F200\nN30 M30\n")
+        app.datei_oeffnen(bedien)
+        app.win.update()
+        dok_b = [d for d in app.dokumente if d.pfad == bedien][0]
+        app.dokument_waehlen(dok_b)
+        app.win.update()
+        t = dok_b.text
+        t.focus_set()
+        t.tag_add("sel", "2.0", "2.end")
+        app.win.update()
+        hoehe = t.dlineinfo("2.0")
+        t.event_generate("<Button-3>", x=30, y=int(hoehe[1]) + 3 if hoehe else 20)
+        app.win.update()
+        menue = aufgeklappt[-1] if aufgeklappt else None
+        namen, kopiert = [], ""
+        if menue is not None:
+            for i in range(menue.index("end") + 1):
+                try:
+                    if menue.type(i) != "command":
+                        continue
+                except Exception:
+                    continue
+                namen.append(menue.entrycget(i, "label"))
+            app.win.clipboard_clear()
+            for i in range(menue.index("end") + 1):
+                try:
+                    if (menue.type(i) == "command"
+                            and menue.entrycget(i, "label") == "Kopieren"):
+                        menue.invoke(i)
+                        break
+                except Exception:
+                    pass
+            app.win.update()
+            try:
+                kopiert = app.win.clipboard_get()
+            except Exception:
+                kopiert = ""
+
+        t.tag_remove("sel", "1.0", "end")
+        t.focus_set()
+        app.win.update()
+        t.event_generate("<Control-a>")
+        app.win.update()
+        try:
+            alles = t.get("sel.first", "sel.last")
+        except Exception:
+            alles = ""
+
+        laenge_vorher = len(t.get("1.0", "end-1c"))
+        t.mark_set("insert", "end-1c")
+        t.insert("end-1c", "\nN40 G0 Z100")
+        t.edit_separator()
+        t.event_generate("<Control-z>")
+        app.win.update()
+        nach_undo = t.get("1.0", "end-1c")
+        t.event_generate("<Control-y>")
+        app.win.update()
+        nach_redo = t.get("1.0", "end-1c")
+
+        for beschreibung, ok, wert in (
+                ("Rechtsklick klappt ein Menue auf", menue is not None,
+                 "%d Menues" % len(aufgeklappt)),
+                ("Kopieren steht im Menue", "Kopieren" in namen, namen),
+                ("Kopieren aus dem Menue fuellt die Zwischenablage",
+                 kopiert == "N20 G1 X50 F200", repr(kopiert)),
+                ("Strg+A markiert das ganze Programm",
+                 len(alles) == laenge_vorher, "%d von %d Zeichen"
+                 % (len(alles), laenge_vorher)),
+                ("Strg+Y wiederholt, statt einzufuegen",
+                 "N40 G0 Z100" in nach_redo and "N40 G0 Z100" not in nach_undo,
+                 "%d -> %d Zeichen" % (len(nach_undo), len(nach_redo)))):
+            if ok:
+                print("  OK     %-50s %s" % (beschreibung, wert))
+            else:
+                fehler.append(beschreibung)
+                print("  FEHLER %-50s %s" % (beschreibung, wert))
+    finally:
+        tk.Menu.tk_popup = echtes_popup
+
+    print("\n12) Gliederung folgt den Aenderungen")
+    # Frueher blieb die Gliederung nach einer Aenderung stehen: ein neu
+    # eingefuegter Werkzeugwechsel tauchte nicht auf, und die Zahl der
+    # Hand-Aenderungen blieb auf dem Stand des Oeffnens.
+    def gliederungstexte():
+        raus = []
+        def lauf(knoten=""):
+            for k in app.gliederung.get_children(knoten):
+                raus.append(app.gliederung.item(k, "text"))
+                lauf(k)
+        lauf()
+        return raus
+
+    glied = os.path.join(ordner, "gliederung.mpf")
+    with open(glied, "wb") as fh:
+        fh.write(b'N10 G54\nN20 T="FRAESER8" M6\nN30 G1 Z-5 F120\nN40 M30\n')
+    app.datei_oeffnen(glied)
+    app.win.update()
+    dok_g = [d for d in app.dokumente if d.pfad == glied][0]
+    app.dokument_waehlen(dok_g)
+    app.win.update()
+    vorher = gliederungstexte()
+    dok_g.text.insert("4.0", 'N35 T="BOHRER6" M6\n')
+    dok_g._inhalt_geaendert()
+    dok_g.diff_aktualisieren(sofort=True)
+    app.win.update()
+    nachher = gliederungstexte()
+
+    for beschreibung, ok, wert in (
+            ("neuer Werkzeugwechsel erscheint in der Gliederung",
+             any("BOHRER6" in z for z in nachher)
+             and not any("BOHRER6" in z for z in vorher),
+             [z for z in nachher if "BOHRER" in z or "FRAESER" in z]),
+            ("Zahl der Hand-Aenderungen wird mitgefuehrt",
+             any("Hand-Änderungen (1)" in z for z in nachher),
+             [z for z in nachher if "Hand-" in z])):
+        if ok:
+            print("  OK     %-50s %s" % (beschreibung, wert))
+        else:
+            fehler.append(beschreibung)
+            print("  FEHLER %-50s %s" % (beschreibung, wert))
+
     app.beenden()
     shutil.rmtree(ordner, ignore_errors=True)
 

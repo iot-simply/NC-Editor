@@ -32,7 +32,7 @@ import os
 import re
 import sys
 
-VERSION = "2.1"
+VERSION = "2.2"
 APP_NAME = "NC-Editor"
 APP_AUTHOR = "Christopher Schmick"
 APP_URL = "https://iot-simply.com"
@@ -655,6 +655,25 @@ def datei_stand(pfad):
     return {"groesse": angaben.st_size, "mtime": round(angaben.st_mtime, 3)}
 
 
+def datei_abdruck(pfad):
+    """Prüfsumme des Dateiinhalts - sie entscheidet eindeutig, wer zuletzt schrieb.
+
+    Größe und Zeitmarke allein genügen nicht: auf Netzlaufwerken ist die
+    Zeitmarke oft nur sekundengenau, und ein neu ausgegebenes Programm kann
+    zufällig genauso lang sein wie das vorige. Dann hielte der Editor die neue
+    Ausgabe für den alten Stand und zeigte jede Abweichung als Hand-Änderung.
+    """
+    import hashlib
+    try:
+        pruef = hashlib.sha1()
+        with open(pfad, "rb") as fh:
+            for haeppchen in iter(lambda: fh.read(262144), b""):
+                pruef.update(haeppchen)
+        return pruef.hexdigest()
+    except OSError:
+        return None
+
+
 def stand_gleich(a, b):
     """True, wenn die Datei seitdem unverändert ist."""
     if not a or not b:
@@ -700,6 +719,9 @@ def original_setzen(pfad, zeilen):
     # Zustand der NC-Datei festhalten. Weicht er später ab, hat ein anderes
     # Programm sie neu geschrieben - meist der Postprozessor.
     eintrag.update(datei_stand(pfad) or {})
+    abdruck = datei_abdruck(pfad)
+    if abdruck:
+        eintrag["abdruck"] = abdruck
     d[_schluessel(pfad)] = eintrag
     _verzeichnis_speichern(d)
     return True
@@ -715,6 +737,9 @@ def original_stand_merken(pfad):
     if not stand:
         return False
     eintrag.update(stand)
+    abdruck = datei_abdruck(pfad)
+    if abdruck:
+        eintrag["abdruck"] = abdruck
     d[_schluessel(pfad)] = eintrag
     _verzeichnis_speichern(d)
     return True
@@ -1491,6 +1516,16 @@ class Dokument(object):
         self.nummern.bind("<Button-4>", self._rad)
         self.nummern.bind("<Button-5>", self._rad)
         self.nummern.bind("<Button-1>", self._nummer_geklickt)
+        self.text.bind("<Button-3>", self._kontextmenue)
+        # Tk belegt im Text-Widget Strg+Y mit Einfügen und Strg+A mit dem
+        # Sprung an den Zeilenanfang. Klassenbindungen laufen vor den
+        # Fensterbindungen, deshalb hängen diese beiden hier am Widget und
+        # schließen mit "break" ab - sonst fügt Strg+Y die Zwischenablage ein.
+        for taste in ("<Control-y>", "<Control-Y>"):
+            self.text.bind(taste, lambda e: self.app.wiederholen())
+        for taste in ("<Control-a>", "<Control-A>"):
+            self.text.bind(taste, lambda e: self.app.alles_markieren())
+        self.nummern.bind("<Button-3>", self._kontextmenue)
 
     # -- Grunddaten ---------------------------------------------------------
 
@@ -1627,17 +1662,44 @@ class Dokument(object):
         if self.original is None:
             original_setzen(self.pfad, self.zeilen())
             self.original = self.zeilen()
-        else:
-            frueher = {"groesse": angaben.get("groesse"), "mtime": angaben.get("mtime")}
-            if frueher["mtime"] is None:
-                # Ablage aus einer älteren Fassung: Zustand jetzt nachtragen
-                original_stand_merken(self.pfad)
-            elif (self.app.einst.get("original_bei_neuausgabe", True)
-                    and not stand_gleich(frueher, self.stand)):
+        elif self.fremd_geschrieben(angaben):
+            if self.app.einst.get("original_bei_neuausgabe", True):
                 original_setzen(self.pfad, self.zeilen())
                 self.original = self.zeilen()
                 self.neu_uebernommen = True
+        else:
+            # Unverändert seit dem letzten Mal. Fehlende Angaben nachtragen,
+            # damit die nächste Prüfung den Abdruck vergleichen kann.
+            if not angaben.get("abdruck"):
+                original_stand_merken(self.pfad)
         self.diff_aktualisieren(sofort=True)
+
+    def fremd_geschrieben(self, angaben):
+        """Hat ein anderes Programm die Datei geschrieben, seit wir sie kennen?
+
+        Beim Laden ist der Inhalt im Editor zwangsläufig derselbe wie in der
+        Datei. Eine Hand-Änderung kann zu diesem Zeitpunkt also nur deshalb in
+        der Datei stehen, weil sie hier gespeichert wurde. Damit hängt alles an
+        der Frage, wer zuletzt geschrieben hat - und die beantwortet der
+        Abdruck.
+        """
+        abdruck_frueher = angaben.get("abdruck")
+        if abdruck_frueher:
+            return datei_abdruck(self.pfad) != abdruck_frueher
+        if angaben.get("mtime") is not None:
+            return not stand_gleich(
+                {"groesse": angaben.get("groesse"), "mtime": angaben.get("mtime")},
+                self.stand)
+        # Ablage einer älteren Fassung: ohne Abdruck und ohne Zeitmarke bleibt
+        # nur der Inhalt. Wenige abweichende Zeilen sind hier gespeicherte
+        # Hand-Änderungen und bleiben markiert. Weicht fast alles ab, war es
+        # ein neuer Lauf des Postprozessors - dann wäre jede Zeile markiert,
+        # und die Hervorhebung wäre wertlos.
+        marken, _weg = hand_aenderungen(self.original, self.zeilen())
+        if not marken:
+            return False
+        return (len(marken) > 25
+                and len(marken) / float(max(1, len(self.zeilen()))) > 0.35)
 
     def neu_laden(self):
         """Liest die Datei erneut von der Platte und hält die Stelle."""
@@ -1696,6 +1758,12 @@ class Dokument(object):
             self.hand, self.hand_weg = hand_aenderungen(self.original, self.zeilen())
         self.anzeige_auffrischen()
         self.app.status_aktualisieren()
+        if self.app.aktiv is self:
+            # Die Gliederung führt Werkzeuge, Zyklen und die Hand-Änderungen
+            # mit. Ohne diesen Aufruf blieb sie nach jeder Änderung stehen:
+            # ein neuer Werkzeugwechsel tauchte dort nicht auf, und die Zahl
+            # der Hand-Änderungen blieb auf dem Stand des Öffnens.
+            self.app.gliederung_bauen()
 
     def hand_anzahl(self):
         return len(self.hand)
@@ -1883,6 +1951,26 @@ class Dokument(object):
             self.text.edit_modified(False)
         self.anzeige_auffrischen()
         self.diff_aktualisieren()
+
+    def _in_markierung(self, stelle):
+        try:
+            return (self.text.compare(stelle, ">=", "sel.first")
+                    and self.text.compare(stelle, "<", "sel.last"))
+        except Exception:
+            return False            # es gibt gar keine Markierung
+
+    def _kontextmenue(self, ereignis):
+        """Rechte Maustaste: Kopieren, Einfügen und Sprünge an der Maus."""
+        self.text.focus_set()
+        if ereignis.widget is self.text:
+            # Außerhalb der Markierung wandert die Schreibmarke mit, innerhalb
+            # bleibt die Markierung stehen - so verhält sich Windows überall.
+            stelle = self.text.index("@%d,%d" % (ereignis.x, ereignis.y))
+            if not self._in_markierung(stelle):
+                self.text.tag_remove("sel", "1.0", "end")
+                self.text.mark_set("insert", stelle)
+        self.app.editor_menue(ereignis, self)
+        return "break"
 
     def auftraege_abraeumen(self):
         """Bricht offene Zeitaufträge dieses Programms ab."""
@@ -2543,6 +2631,12 @@ class App(object):
         b("<Control-plus>", lambda e: self.schrift_aendern(1))
         b("<Control-minus>", lambda e: self.schrift_aendern(-1))
         b("<Control-KeyPress-0>", lambda e: self.schrift_aendern(0))
+        # Strg+A und Strg+Y bringt Tk nicht überall mit derselben Bedeutung
+        # mit: auf Strg+A liegt sonst der Sprung an den Zeilenanfang, auf
+        # Strg+Y das Einfügen. Beide werden deshalb selbst gesetzt, damit sie
+        # das tun, was im Menü daneben steht.
+        b("<Control-a>", self.alles_markieren)
+        b("<Control-A>", self.alles_markieren)
 
     # -- Ansicht ------------------------------------------------------------
 
@@ -2750,8 +2844,15 @@ class App(object):
         if dok is None or not dok.pfad or not os.path.isfile(dok.pfad):
             return False
         jetzt = datei_stand(dok.pfad)
-        if jetzt is None or dok.stand is None or stand_gleich(jetzt, dok.stand):
+        if jetzt is None or dok.stand is None:
             return False
+        if stand_gleich(jetzt, dok.stand):
+            # Größe und Zeitmarke sprechen für unverändert. Auf Netzlaufwerken
+            # kann die Zeitmarke trotzdem gleich geblieben sein, deshalb hier
+            # noch der Abdruck.
+            bekannt = (original_info(dok.pfad) or {}).get("abdruck")
+            if not bekannt or datei_abdruck(dok.pfad) == bekannt:
+                return False
         if not dok.gespeichert and not messagebox.askyesno(
                 APP_NAME,
                 "%s wurde außerhalb des Editors neu geschrieben.\n\nNeu laden?\n"
@@ -2876,6 +2977,59 @@ class App(object):
             m.tk_popup(ereignis.x_root, ereignis.y_root)
         finally:
             m.grab_release()
+
+    def editor_menue(self, ereignis, dok):
+        """Das Menü der rechten Maustaste im Editor.
+
+        Ohne dieses Menü gab es für die Maus keinen Weg zum Kopieren - wer die
+        Tastenkürzel nicht kennt, kam nicht an den Text.
+        """
+        tk = self.tk
+        T = THEMEN[self.einst.get("design", "hell")]
+        m = tk.Menu(self.win, tearoff=0, bg=T["panel"], fg=T["ink"],
+                    activebackground=T["accent"], activeforeground="white")
+        try:
+            markiert = dok.text.get("sel.first", "sel.last")
+        except Exception:
+            markiert = ""
+        try:
+            in_ablage = bool(self.win.clipboard_get())
+        except Exception:
+            in_ablage = False
+        wenn = lambda bedingung: "normal" if bedingung else "disabled"
+        m.add_command(label="Ausschneiden", accelerator="Strg+X",
+                      state=wenn(markiert),
+                      command=lambda: self._editor_befehl("<<Cut>>"))
+        m.add_command(label="Kopieren", accelerator="Strg+C",
+                      state=wenn(markiert),
+                      command=lambda: self._editor_befehl("<<Copy>>"))
+        m.add_command(label="Einfügen", accelerator="Strg+V",
+                      state=wenn(in_ablage),
+                      command=lambda: self._editor_befehl("<<Paste>>"))
+        m.add_separator()
+        m.add_command(label="Alles markieren", accelerator="Strg+A",
+                      command=self.alles_markieren)
+        einzeilig = markiert.strip() and "\n" not in markiert
+        if einzeilig:
+            kurz = markiert.strip()
+            m.add_command(label='Suchen nach "%s"'
+                                % (kurz[:28] + ("..." if len(kurz) > 28 else "")),
+                          command=lambda t=kurz: self.suche_mit(t))
+        m.add_separator()
+        m.add_command(label="Rückgängig", accelerator="Strg+Z",
+                      command=lambda: self._editor_befehl("<<Undo>>"))
+        m.add_command(label="Gehe zu Zeile ...", accelerator="Strg+G",
+                      command=self.gehe_zu_zeile)
+        try:
+            m.tk_popup(ereignis.x_root, ereignis.y_root)
+        finally:
+            m.grab_release()
+
+    def suche_mit(self, text):
+        """Übernimmt den markierten Text in die Suche und führt sie aus."""
+        self.v_suche.set(text)
+        self.suche_ausfuehren()
+        self.suche_fokus()
 
     def andere_schliessen(self, dok):
         for anderes in list(self.dokumente):
@@ -3902,9 +4056,25 @@ class App(object):
             except Exception:
                 pass
 
-    def alles_markieren(self):
+    def alles_markieren(self, _ereignis=None):
+        """Strg+A - im Eingabefeld das Feld, sonst das ganze Programm."""
+        try:
+            ziel = self.win.focus_get()
+        except Exception:
+            ziel = None
+        if ziel is not None and hasattr(ziel, "select_range"):
+            try:
+                ziel.select_range(0, "end")
+                ziel.icursor("end")
+                return "break"
+            except Exception:
+                pass
         if self.aktiv:
             self.aktiv.text.tag_add("sel", "1.0", "end-1c")
+        return "break"
+
+    def wiederholen(self):
+        self._editor_befehl("<<Redo>>")
         return "break"
 
     def _einzelnes_fenster_setzen(self):
